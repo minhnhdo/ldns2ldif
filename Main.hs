@@ -43,7 +43,7 @@ parseAtom = state $ \(atom:tts) -> (Atom $ disect atom, tts)
                        [] -> aux (Str a:acc) []
                        _ -> let (c, d) = break (== '#') (tail b)
                             in case d of
-                               [] -> error "Parse error on atom"
+                               [] -> error $ "Parse error on atom: " ++ s
                                _ -> aux (Str a:Var ("#" ++ c ++ "#"):acc)
                                         (tail d)
 
@@ -59,7 +59,7 @@ parseList = state $ \ts -> aux [] ts
 parse :: State TokenStream Data
 parse = state $ \ts -> case ts of
     ("(":tts) -> runState parseList tts
-    (")":_) -> error "Unexpected )"
+    s@(")":_) -> error $ "Unexpected ')': " ++ show s
     [] -> error "Unexpected end of token stream"
     _ -> runState parseAtom ts
 
