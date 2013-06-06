@@ -1,3 +1,4 @@
+import Control.Applicative ((<$>), (<*>))
 import Control.Monad.State (State, state, runState)
 import Data.List (intersperse)
 import qualified Data.Text as T ( Text, singleton, pack
@@ -5,12 +6,20 @@ import qualified Data.Text as T ( Text, singleton, pack
 import System.Environment (getArgs, getProgName)
 import System.IO (IOMode (..), withFile, hGetContents)
 
-data Data = List [Data] | Atom String
+data Atom = L [Atom] | Var String | Str String
+    deriving Eq
+data Data = List [Data] | Atom Atom
+    deriving Eq
 type TokenStream = [String]
+
+instance Show Atom where
+    show (L l) = foldr (\x acc -> show x ++ acc) "" l
+    show (Var s) = s
+    show (Str s) = s
 
 instance Show Data where
     show (List l) = show l
-    show (Atom s) = s
+    show (Atom a) = show a
 
 tokenize :: T.Text -> [T.Text]
 tokenize = concatMap T.words . T.lines
@@ -18,7 +27,25 @@ tokenize = concatMap T.words . T.lines
          . T.replace (T.singleton ')') (T.pack " ) ")
 
 parseAtom :: State TokenStream Data
-parseAtom = state $ \(name:tts) -> (Atom name, tts)
+parseAtom = state $ \(atom:tts) -> (Atom $ disect atom, tts)
+  where disect :: String -> Atom
+        disect str = let r = filter (\a -> case a of
+                                                Str [] -> False
+                                                _ -> True)
+                                  $ aux [] str
+                     in case r of [x] -> x
+                                  _ -> L r
+          where aux :: [Atom] -> String -> [Atom]
+                aux acc [] = acc
+                aux acc s =
+                    let (a, b) = break (== '#') s
+                    in case b of
+                       [] -> aux (Str a:acc) []
+                       _ -> let (c, d) = break (== '#') (tail b)
+                            in case d of
+                               [] -> error "Parse error on atom"
+                               _ -> aux (Str a:Var ("#" ++ c ++ "#"):acc)
+                                        (tail d)
 
 parseList :: State TokenStream Data
 parseList = state $ \ts -> aux [] ts
@@ -56,18 +83,45 @@ translateAttrs ds =
 
 translateRecord :: String -> Data -> String
 -- Schema: (<cn> ((<key> <val>) ...))
-translateRecord base (List [Atom cn, List attrs]) =
+translateRecord base (List [Atom (Str cn), List attrs]) =
     translated ++ "\nobjectclass: dnsrrset\nobjectclass: dnszone"
     where (_, translated) = skeleton cn base attrs
 
 translate :: Data -> String
 -- Schema (<cn> <base> ((<key> <val) ...) <record>...)
-translate (List (Atom cn:Atom base:List attrs:records)) =
+translate (List (Atom (Str cn):Atom (Str base):List attrs:records)) =
     join "\n" $ (translated ++ "\nobjectclass: dnszone") : translatedRecords
     where (newBase, translated) = skeleton cn base attrs
           translatedRecords =
             ['\n' : translateRecord newBase record | record <- records]
-translate ds = error "Wrong schema: " ++ show ds
+translate ds = error $ "Wrong schema: " ++ show ds
+
+replace' :: (Atom, Atom, Data) -> Data
+replace' (v, value, f) = replace v value f
+
+replace :: Atom -> Atom -> Data -> Data
+replace v value (List l) = List . map (replace v value) $ l
+replace v value (Atom (L l)) = Atom . L
+                             . map (replaceAtom v value) $ l
+replace v value (Atom a) = Atom $ replaceAtom v value a
+
+replaceAtom :: Atom -> Atom -> Atom -> Atom
+replaceAtom _ _ str@(Str _) = str
+replaceAtom (Var n1) value v@(Var n2)
+  | n1 == n2  = value
+  | otherwise = v
+
+extractAtom :: Data -> Atom
+extractAtom (Atom a) = a
+
+expandForEach :: Data -> [Data]
+expandForEach
+    (List [Atom (Var "#for-each#"), Atom var@(Var _), List values, form]) =
+    map replace' $ (,,) <$> [var] <*> map extractAtom values <*> expand [form]
+expandForEach x = [x]
+
+expand :: [Data] -> [Data]
+expand = concatMap expandForEach
 
 main :: IO ()
 main = do
@@ -85,4 +139,4 @@ main = do
                                     . T.pack
                                     $ contents
                         ds = parseMany tokenStream
-                    putStrLn . join "\n\n" . map translate $ ds)
+                    putStrLn . join "\n\n" . map translate $ expand ds)
