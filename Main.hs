@@ -59,6 +59,7 @@ parseList = state $ \ts -> aux [] ts
 parse :: State TokenStream Data
 parse = state $ \ts -> case ts of
     ("(":tts) -> runState parseList tts
+    (")":_) -> error "Unexpected )"
     [] -> error "Unexpected end of token stream"
     _ -> runState parseAtom ts
 
