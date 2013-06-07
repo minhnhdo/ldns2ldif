@@ -70,8 +70,8 @@ parseMany = aux []
           aux acc nts = let (d, nnts) = runState parse nts
                         in aux (d:acc) nnts
 
-join :: String -> [String] -> String
-join sep ss = foldr (++) "" (intersperse sep ss)
+join :: [a] -> [[a]] -> [a]
+join sep = foldr (\x acc -> x ++ sep ++ acc) []
 
 skeleton :: String -> String -> [Data] -> (String, String)
 skeleton cn base attrs =
