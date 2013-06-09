@@ -1,6 +1,6 @@
 import Control.Applicative ((<$>), (<*>))
 import Control.Monad.State (State, state, runState)
-import Data.List (intersperse)
+import Data.List (intercalate)
 import qualified Data.Text as T ( Text, singleton, pack
                                 , unpack, replace, words, lines)
 import System.Environment (getArgs, getProgName)
@@ -70,17 +70,14 @@ parseMany = aux []
           aux acc nts = let (d, nnts) = runState parse nts
                         in aux (d:acc) nnts
 
-join :: [a] -> [[a]] -> [a]
-join sep = foldr (\x acc -> x ++ sep ++ acc) []
-
 skeleton :: String -> String -> [Data] -> (String, String)
 skeleton cn base attrs =
-    (newBase, join "\n" ["dn: " ++ newBase, "cn: " ++ cn, translateAttrs attrs])
+    (newBase, intercalate "\n" ["dn: " ++ newBase, "cn: " ++ cn, translateAttrs attrs])
     where newBase = "cn=" ++ cn ++ "," ++ base
 
 translateAttrs :: [Data] -> String
 translateAttrs ds =
-    join "\n" [show (head l) ++ ": " ++ show (l !! 1) | (List l) <- ds]
+    intercalate "\n" [show (head l) ++ ": " ++ show (l !! 1) | (List l) <- ds]
 
 translateRecord :: String -> Data -> String
 -- Schema: (<cn> ((<key> <val>) ...))
@@ -91,7 +88,7 @@ translateRecord base (List [Atom (Str cn), List attrs]) =
 translate :: Data -> String
 -- Schema (<cn> <base> ((<key> <val) ...) <record>...)
 translate (List (Atom (Str cn):Atom (Str base):List attrs:records)) =
-    join "\n" $ (translated ++ "\nobjectclass: dnszone") : translatedRecords
+    intercalate "\n" $ (translated ++ "\nobjectclass: dnszone") : translatedRecords
     where (newBase, translated) = skeleton cn base attrs
           translatedRecords =
             ['\n' : translateRecord newBase record | record <- records]
@@ -140,4 +137,4 @@ main = do
                                     . T.pack
                                     $ contents
                         ds = parseMany tokenStream
-                    putStrLn . join "\n\n" . map translate $ expand ds)
+                    putStrLn . intercalate "\n\n" . map translate $ expand ds)
